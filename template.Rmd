@@ -1,0 +1,189 @@
+---
+title: "Present Value and Inflation"
+author: "Karen Jiang"
+date: "5/5/2020"
+output: 
+  flexdashboard::flex_dashboard
+runtime:
+  shiny
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+library(janitor)
+library(flexdashboard)
+```
+
+
+
+```{r}
+money <- read.csv("world_development_indicator.csv") %>%
+  head(3) %>%
+  clean_names() %>%
+  na_if("..") %>%
+  mutate(x2019_yr2019 = as.double(x2019_yr2019)) %>%
+  pivot_longer(cols = starts_with("x20"),
+               names_to = "Year", 
+               values_to = "Values")
+
+
+  money <- separate(data = money, 
+                    col = Year, 
+                    into = c("Delete", "Year"), 
+                    sep = "r", 
+                    remove = TRUE) %>%
+    select(-Delete)
+    
+```
+
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+numericInput("amount",
+            label = "Amount",
+            value = 100,
+            min = 1)
+
+numericInput("discount",
+            label = "Discount",
+            value = 0.03,
+            min = 0,
+            max = 1,
+            step = 0.005)
+
+sliderInput("years",
+            label = "Years", 
+            min = 2000,
+            max = 2018,
+            value = c(2010, 2015)
+)
+
+
+selectInput("ref_year",
+            label = "Reference year",
+            choices = unique(money$Year),
+            selected = 2018)
+
+selectInput("series",
+            label = "Series Name",
+            choices = unique(money$series_name),
+            selected = "Consumer price index (2010 = 100)")
+```
+
+Column
+-----------------------------------------------------------------------
+
+### Table
+
+```{r}
+
+filtered_table <- reactive({ 
+  money %>%
+  filter(series_name == input$series) %>%
+  mutate(Year = as.numeric(Year))
+})
+
+reference_year_adjuster <- reactive({
+  filtered_table() %>%
+  filter(Year == input$ref_year) %>%
+  select(Values)
+})
+
+table <- reactive({
+  tibble(years = seq(input$years[1], input$years[2])) %>%
+  left_join(y = filtered_table(), by = c("years" = "Year")) %>%
+  mutate(original_amount = 
+           input$amount,
+         discount_amount = 
+           original_amount/(1+input$discount)^(years-input$years[1]),
+         reference_year = 
+           as.numeric(input$ref_year),
+         reference_year_Values = 
+           as.numeric(reference_year_adjuster()),
+         inflation_adjusted_amount = 
+           original_amount * reference_year_Values / Values,
+         discounted_inflation_adjusted_amount = 
+           discount_amount * reference_year_Values / Values) %>%
+  select(years, original_amount, discount_amount, inflation_adjusted_amount, discounted_inflation_adjusted_amount)
+})
+
+renderTable({
+  table
+})
+
+
+```
+
+
+### Graph
+
+
+```{r}
+
+```
+
+
+```{r}
+# filtered_table <- money %>%
+#   filter(series_name == "Consumer price index (2010 = 100)") %>%
+#   mutate(Year = as.numeric(Year))
+# 
+# reference_year_adjuster <- filtered_table %>%
+#   filter(Year == reference_year) %>%
+#   select(Values)
+# 
+# table <- tibble(years = seq(start_year, end_year)) %>%
+#   left_join(y = filtered_table, by = c("years" = "Year")) %>%
+#   mutate(original_amount = amount,
+#          discount_amount = original_amount/(1+discount)^(years-start_year),
+#          reference_year = as.numeric(reference_year),
+#          reference_year_Values = as.numeric(reference_year_adjuster),
+#          inflation_adjusted_amount = original_amount * reference_year_Values / Values,
+#          discounted_inflation_adjusted_amount = discount_amount * reference_year_Values / Values)
+# # 
+# table
+# 
+# table %>%
+#   ggplot(aes(x = years)) + 
+#   geom_line(aes(y = original_amount)) + 
+#   geom_point(aes(y = original_amount)) + 
+#   geom_text(aes(x = 2015, y = amount), 
+#             label = "Original Amount", 
+#             hjust = 0, 
+#             nudge_x = 0.1,
+#             show.legend = FALSE) + 
+#   
+#   geom_line(aes(y = discount_amount), color = "red") + 
+#   geom_point(aes(y = discount_amount), color = "red") + 
+#   geom_text(aes(x = 2015, y = min(discount_amount)), 
+#             label = "Discounted Amount", 
+#             hjust = 0, 
+#             nudge_x = 0.1,
+#             show.legend = FALSE) + 
+#   
+#   geom_line(aes(y = inflation_adjusted_amount), linetype = "dotted") +
+#   geom_point(aes(y = inflation_adjusted_amount)) +
+#   geom_text(aes(x = 2015, y = min(inflation_adjusted_amount)), 
+#             label = "Inflation-Adjusted Amount", 
+#             hjust = 0, 
+#             nudge_x = 0.1,
+#             show.legend = FALSE) + 
+#   
+#   geom_line(aes(y = discounted_inflation_adjusted_amount), color = "red", linetype = "dotted") +
+#   geom_point(aes(y = discounted_inflation_adjusted_amount), color = "red") +
+#   geom_text(aes(x = 2015, y = min(discounted_inflation_adjusted_amount)), 
+#             label = "Inflation-Adjusted \nand Discounted Amount", 
+#             hjust = 0, 
+#             nudge_x = 0.1,
+#             show.legend = FALSE) + 
+# 
+#   theme_minimal() + 
+#   theme(panel.grid.minor = element_blank()) +
+#   expand_limits(x = end_year + 3)
+
+```
+
