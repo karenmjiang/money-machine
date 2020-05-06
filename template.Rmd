@@ -3,7 +3,8 @@ title: "Present Value and Inflation"
 author: "Karen Jiang"
 date: "5/5/2020"
 output: 
-  flexdashboard::flex_dashboard
+  flexdashboard::flex_dashboard:
+    vertical_layout: fill
 runtime:
   shiny
 ---
@@ -14,6 +15,9 @@ knitr::opts_chunk$set(echo = FALSE)
 library(tidyverse)
 library(janitor)
 library(flexdashboard)
+library(gt)
+library(shiny)
+library(plotly)
 ```
 
 
@@ -44,37 +48,40 @@ Column {.sidebar}
 
 ```{r}
 numericInput("amount",
-            label = "Amount",
+            label = "Annual Amount",
             value = 100,
             min = 1)
 
 numericInput("discount",
-            label = "Discount",
+            label = "Discount Rate",
             value = 0.03,
             min = 0,
             max = 1,
             step = 0.005)
 
 sliderInput("years",
-            label = "Years", 
+            label = "Years through which costs are incurred", 
             min = 2000,
             max = 2018,
+            step = 1,
+            ticks = FALSE,
+            timeFormat = "%Y",
             value = c(2010, 2015)
 )
 
 
 selectInput("ref_year",
-            label = "Reference year",
+            label = "Select the year you want the currency to be displayed",
             choices = unique(money$Year),
             selected = 2018)
 
 selectInput("series",
-            label = "Series Name",
+            label = "Series Name for Inflation adjustment",
             choices = unique(money$series_name),
             selected = "Consumer price index (2010 = 100)")
 ```
 
-Column
+Column {.tabset}
 -----------------------------------------------------------------------
 
 ### Table
@@ -108,15 +115,33 @@ table <- reactive({
            original_amount * reference_year_Values / Values,
          discounted_inflation_adjusted_amount = 
            discount_amount * reference_year_Values / Values) %>%
-  select(years, original_amount, discount_amount, inflation_adjusted_amount, discounted_inflation_adjusted_amount)
+  select(years, original_amount, discount_amount, inflation_adjusted_amount, discounted_inflation_adjusted_amount) %>%
+  mutate_if(is.numeric, round, 2)
+
 })
 
-renderTable({
-  table
+
+gt_table <- reactive({
+  table() %>%
+  gt() %>%
+  tab_header(
+    title = "Cost Table",
+    subtitle = paste("Inflation-adjusted Costs in ", input$ref_year, " US Dollars ($)")
+  ) %>%
+  cols_label(
+    years = "Year",
+    original_amount = "Original Amount",
+    discount_amount = "Discounted Amount",
+    inflation_adjusted_amount = "Inflation Adjusted Amount",
+    discounted_inflation_adjusted_amount = "Discounted and Inflation Adjusted Amount")
 })
 
+render_gt({
+  gt_table()
+  })
 
 ```
+
 
 
 ### Graph
@@ -124,66 +149,116 @@ renderTable({
 
 ```{r}
 
+renderPlotly({
+  
+  plot <- table() %>%
+  ggplot(aes(x = years)) +
+  geom_line(aes(y = original_amount), linetype = "dotted") +
+  geom_point(aes(y = original_amount)) +
+  geom_text(aes(x = input$years[2], y = input$amount),
+            label = "Original",
+            nudge_x = 1,
+            size = 3,
+            show.legend = FALSE) +
+    
+  geom_line(aes(y = discount_amount), color = "red") +
+  geom_point(aes(y = discount_amount), color = "red") +
+  geom_text(aes(x = input$years[2], y = min(discount_amount)),
+            label = "Discounted",
+            nudge_x = 1,
+            size = 3,
+            color = "red",
+            show.legend = FALSE) +
+    
+  geom_line(aes(y = inflation_adjusted_amount), color = "blue") +
+  geom_point(aes(y = inflation_adjusted_amount), color = "blue") +
+  geom_text(aes(x = input$years[2], y = min(inflation_adjusted_amount)),
+            label = "Inflation-Adjusted",
+            nudge_x = 1,
+            size = 3,
+            color = "blue",
+            show.legend = FALSE) +
+
+  geom_line(aes(y = discounted_inflation_adjusted_amount), color = "purple") +
+  geom_point(aes(y = discounted_inflation_adjusted_amount), color = "purple") +
+  geom_text(aes(x = input$years[2], y = min(discounted_inflation_adjusted_amount)),
+            label = "Inflation-Adjusted \nand Discounted",
+            nudge_x = 1,
+            size = 3,
+            color = "purple",
+            show.legend = FALSE) +
+    
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank()) +
+  expand_limits(x = input$years[2] + 2) +
+  labs(
+    y = paste(input$ref_year, " US Dollars ($)"),
+    x = ""
+  )
+
+  ggplotly(plot)
+})
+
 ```
 
+Column {data-width=200}
+-----------------------------------------------------------------------
+
+### Sum of Original Amount
 
 ```{r}
-# filtered_table <- money %>%
-#   filter(series_name == "Consumer price index (2010 = 100)") %>%
-#   mutate(Year = as.numeric(Year))
-# 
-# reference_year_adjuster <- filtered_table %>%
-#   filter(Year == reference_year) %>%
-#   select(Values)
-# 
-# table <- tibble(years = seq(start_year, end_year)) %>%
-#   left_join(y = filtered_table, by = c("years" = "Year")) %>%
-#   mutate(original_amount = amount,
-#          discount_amount = original_amount/(1+discount)^(years-start_year),
-#          reference_year = as.numeric(reference_year),
-#          reference_year_Values = as.numeric(reference_year_adjuster),
-#          inflation_adjusted_amount = original_amount * reference_year_Values / Values,
-#          discounted_inflation_adjusted_amount = discount_amount * reference_year_Values / Values)
-# # 
-# table
-# 
-# table %>%
-#   ggplot(aes(x = years)) + 
-#   geom_line(aes(y = original_amount)) + 
-#   geom_point(aes(y = original_amount)) + 
-#   geom_text(aes(x = 2015, y = amount), 
-#             label = "Original Amount", 
-#             hjust = 0, 
-#             nudge_x = 0.1,
-#             show.legend = FALSE) + 
-#   
-#   geom_line(aes(y = discount_amount), color = "red") + 
-#   geom_point(aes(y = discount_amount), color = "red") + 
-#   geom_text(aes(x = 2015, y = min(discount_amount)), 
-#             label = "Discounted Amount", 
-#             hjust = 0, 
-#             nudge_x = 0.1,
-#             show.legend = FALSE) + 
-#   
-#   geom_line(aes(y = inflation_adjusted_amount), linetype = "dotted") +
-#   geom_point(aes(y = inflation_adjusted_amount)) +
-#   geom_text(aes(x = 2015, y = min(inflation_adjusted_amount)), 
-#             label = "Inflation-Adjusted Amount", 
-#             hjust = 0, 
-#             nudge_x = 0.1,
-#             show.legend = FALSE) + 
-#   
-#   geom_line(aes(y = discounted_inflation_adjusted_amount), color = "red", linetype = "dotted") +
-#   geom_point(aes(y = discounted_inflation_adjusted_amount), color = "red") +
-#   geom_text(aes(x = 2015, y = min(discounted_inflation_adjusted_amount)), 
-#             label = "Inflation-Adjusted \nand Discounted Amount", 
-#             hjust = 0, 
-#             nudge_x = 0.1,
-#             show.legend = FALSE) + 
-# 
-#   theme_minimal() + 
-#   theme(panel.grid.minor = element_blank()) +
-#   expand_limits(x = end_year + 3)
 
+
+num1 <- reactive({
+  sum(table()$original_amount)
+})
+
+renderValueBox({
+  valueBox(prettyNum(paste("$", num1()),
+                     big.mark = ","))
+})
 ```
 
+### Sum of Discounted Amount
+
+```{r}
+
+num2 <- reactive({
+  sum(table()$discount_amount)
+})
+
+renderValueBox({
+  valueBox(prettyNum(paste("$", num2()),
+                     big.mark = ","),
+           color = "danger")
+})
+```
+
+
+### Sum of Inflation Adjusted Amount
+
+```{r}
+num3 <- reactive({
+  sum(table()$inflation_adjusted_amount)
+})
+
+renderValueBox({
+  valueBox(prettyNum(paste("$", num3()),
+                     big.mark = ","),
+           color = "blue")
+})
+```
+
+### Sum of Inflation Adjusted Discounted Amount
+
+```{r}
+num4 <- reactive({
+  sum(table()$discounted_inflation_adjusted_amount)
+})
+
+renderValueBox({
+  valueBox(prettyNum(paste("$", num4()),
+                     big.mark = ","),
+           color = "info")
+})
+```
